@@ -10,37 +10,57 @@
 
     <script src="https://unpkg.com/web3@latest/dist/web3.min.js"></script>
 	
-	<script src="https://unpkg.com/@metamask/detect-provider/dist/detect-provider.min.js"></script>
+	<script src="./metamask-onboarding.bundle.js"></script>
 	
-	<script>
-window.addEventListener('load', function() {
 
-if (typeof window.ethereum !== 'undefined') {
-	console.log('MetaMask is installed!');
-	window.web3 = new Web3(window.ethereum);
-//	detectEthereumProvider((err, res) => {
-	//	if (!err) {
-		//window.web3 = new Web3(res);
-//		} else { 
-	//	console.log("Can't detect provider");
-		//}
-//	});
-	} else {
-		console.log('MetaMask NOT found!');
-	}
-})
-</script>
 </head>
 <body>
     <div class="container">
 
         <h1>Bulls Investing Club</h1>
 
-		<button id="cnbutton" onclick="getAccount()">Connect Metamask</button>
-		
-		<label for="name" class="col-lg-2 control-label">Status</label>
-		<label id="status" class="col-lg-2 control-label"></label>
-		
+	<button id="onboard">Loading...</button>
+
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        const onboarding = new MetaMaskOnboarding();
+        const onboardButton = document.getElementById('onboard');
+        let accounts;
+
+        const updateButton = () => {
+          if (!MetaMaskOnboarding.isMetaMaskInstalled()) {
+            onboardButton.innerText = 'Click here to install MetaMask!';
+            onboardButton.onclick = () => {
+              onboardButton.innerText = 'Onboarding in progress';
+              onboardButton.disabled = true;
+              onboarding.startOnboarding();
+            };
+          } else if (accounts && accounts.length > 0) {
+            onboardButton.innerText = 'Connected';
+			window.web3 = new Web3(window.ethereum);
+            onboardButton.disabled = true;
+            onboarding.stopOnboarding();
+          } else {
+            onboardButton.innerText = 'Connect';
+            onboardButton.onclick = async () => {
+              await window.ethereum.request({
+                method: 'eth_requestAccounts',
+              });
+            };
+          }
+        };
+
+        updateButton();
+        if (MetaMaskOnboarding.isMetaMaskInstalled()) {
+          window.ethereum.on('accountsChanged', (newAccounts) => {
+            accounts = newAccounts;
+            updateButton();
+          });
+        }
+      });
+    </script>
+
+
 		<button id="gabutton" onclick="showAccounts()">Get accounts</button>
 		
 		<label for="name" class="col-lg-2 control-label">Accounts</label>
@@ -48,26 +68,24 @@ if (typeof window.ethereum !== 'undefined') {
 
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
-
     <script>
 		async function getAccount() {
+		
+			if (typeof window.ethereum === 'undefined') return;
+		
 			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-		//	const account = accounts[0];
-			// showAccount.innerHTML = account;
-	//		let accList = "";
-		//	for (let i = 0; i < accounts.length; i++) {
-		//		accList = accounts[i] + "<br />";
-	//		}
+
 			if (accounts.length) {
 				document.getElementById('status').innerHTML = "connected !";
 			} else {
 				document.getElementById('status').innerHTML = "can't connect MetaMask";
 			}
-		//	console.log(accList);
 		}
 		
 		function showAccounts() {
+		
+		if (typeof window.ethereum === 'undefined') return;
+		
   web3.eth.getAccounts((err, res) => {
     let output = "";
 
