@@ -12,6 +12,8 @@
 	
 	<script src="./metamask-onboarding.bundle.js"></script>
 	
+	<script src="https://unpkg.com/erc20-contract-js"></script>
+	
 
 </head>
 <body>
@@ -26,6 +28,35 @@
         const onboarding = new MetaMaskOnboarding();
         const onboardButton = document.getElementById('onboard');
         let accounts;
+		
+		 function loadJSON(callback) {   
+			const xobj = new XMLHttpRequest();
+			xobj.overrideMimeType("application/json");
+			xobj.open('GET', 'BIC_stake_ABI.txt', true); 
+			xobj.onreadystatechange = function () {
+				if (xobj.readyState == 4 && xobj.status == "200") {
+					// Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+					callback(xobj.responseText);
+				}
+			};
+			xobj.send(null);  
+		}
+		
+		function readAbiFile() {
+			loadJSON(function(response) {
+				const csContractAbi = JSON.parse(response);
+				window.csContract = new web3.eth.Contract(csContractAbi, stakeContract);
+			});
+		}
+		
+		const web3connect = () => {
+		    onboardButton.innerText = 'Connected';
+			window.web3 = new Web3(window.ethereum);
+			window.stakeContract = '0x33e85f0e26600a6644b6c910639B0bc7a99fd34e'; // BIC BSC stake contract
+			window.bicContract = '0xa89f3920D5F4B333d783C9cac33E13A26C78bc2b'; // BIC BSC contract
+			readAbiFile();
+            onboardButton.disabled = true;
+		};
 
         const updateButton = () => {
           if (!MetaMaskOnboarding.isMetaMaskInstalled()) {
@@ -36,16 +67,15 @@
               onboarding.startOnboarding();
             };
           } else if (accounts && accounts.length > 0) {
-            onboardButton.innerText = 'Connected';
-			window.web3 = new Web3(window.ethereum);
-            onboardButton.disabled = true;
+			web3connect();
             onboarding.stopOnboarding();
           } else {
             onboardButton.innerText = 'Connect';
             onboardButton.onclick = async () => {
-              await window.ethereum.request({
+              accounts = await window.ethereum.request({
                 method: 'eth_requestAccounts',
               });
+			  web3connect();
             };
           }
         };
@@ -62,19 +92,32 @@
 
 
 		<button id="gabutton" onclick="showAccounts()">Get accounts</button>
-		
 		<label for="name" class="col-lg-2 control-label">Accounts</label>
 		<div id="accounts"></div>
-
+		
+		<button id="bicbutton" onclick="showBicBalance()">Get BIC balance</button>
+		<label for="name" class="col-lg-2 control-label">BIC: </label>
+		<div id="bicBalance"></div>
+		
+		<button id="stbbutton" onclick="showStakeBalance()">Get Stake balance</button>
+		<label for="name" class="col-lg-2 control-label">Stake: </label>
+		<div id="stakeBalance"></div>
+		
+		<input type="text" id="stakeValue" size="100" value="10">
+		<button id="stakebutton" onclick="stakeBic()">Stake BIC</button>
+		<label for="name" class="col-lg-2 control-label">stake result: </label>
+		<div id="stakeRes"></div>
+		
+		<button id="unstakebutton" onclick="unstakeBic()">UnStake BIC</button>
+		<label for="name" class="col-lg-2 control-label">unstake result: </label>
+		<div id="unstakeRes"></div>
     </div>
 
     <script>
+// -- 	getAccount()
 		async function getAccount() {
-		
 			if (typeof window.ethereum === 'undefined') return;
-		
 			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-
 			if (accounts.length) {
 				document.getElementById('status').innerHTML = "connected !";
 			} else {
@@ -82,30 +125,109 @@
 			}
 		}
 		
+		async function getActiveAccount() {
+			if (typeof window.web3 === 'undefined') return;
+			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+			if (!accounts.length) return;
+			return accounts[0];
+		}
+		
+// -- 	showBicBalance()
+		async function showBicBalance() {
+			const address = await getActiveAccount();
+			if (!address) return;
+			const ercContract = new ERC20ContractJs(web3, bicContract);
+			let wei = await ercContract.balanceOf(address).call();
+			document.getElementById('bicBalance').innerHTML = web3.utils.fromWei(wei, 'ether') +" (BIC)<br />"
+		}
+		
+// -- 	showStakeBalance()
+		async function showStakeBalance() {
+			const address = await getActiveAccount();
+			if (!address) return;
+			
+			const userStake = await csContract.methods.users(address).call();
+			
+			let output = '';
+			if (userStake) {
+				if (userStake.amount > 0) {
+					output = "value: " + userStake.amount + "<br />";
+					output += "date: " + new Date(userStake.time);
+				} else {
+					output = "Stake is Empty";
+				}
+			} else {
+				output = "Get Stake error";
+			}			
+			
+			document.getElementById('stakeBalance').innerHTML = output + "<br />";
+		}
+		
+// -- sendContractTx
+		async function sendContractTx(address, data) {
+			const wallet = web3.utils.toChecksumAddress(address);
+			const tx = {
+				gas: '0x7A120', // customizable by user during MetaMask confirmation.
+				to: stakeContract,
+				from: wallet, // must match user's active address.
+				data: data
+			};
+
+			// As with any RPC call, it may throw an error
+			const txHash = await ethereum.request({
+					method: 'eth_sendTransaction',
+					params: [tx],
+				});
+				
+			return 	txHash;
+		}
+		
+// -- 	stakeBic()
+		async function stakeBic() {
+			const address = await getActiveAccount();
+			if (!address) return;
+			
+			const stakeValue = document.getElementById('stakeValue').value;
+			console.log('stakeValue: ', stakeValue);
+			const value = web3.utils.toWei(stakeValue, 'ether');
+			console.log('weiValue: ', value);
+			// TODO check value
+			
+			let output = "";
+			const encodedABI = csContract.methods.stake(value).encodeABI();
+			try {
+				const stakeRes = await sendContractTx(address, encodedABI);
+				output = stakeRes;
+			} catch (e) {
+				output = e;
+			}
+			document.getElementById('stakeRes').innerHTML = output + "<br />"
+		}
+		
+// -- 	unstakeBic()
+		async function unstakeBic() {
+			const address = await getActiveAccount();
+			if (!address) return;
+			const ercContract = new ERC20ContractJs(web3, stakeContract);
+			let wei = await ercContract.balanceOf(address).call();
+			document.getElementById('unstakeRes').innerHTML = web3.utils.fromWei(wei, 'ether') +" (BIC)<br />"
+		}
+		
 		function showAccounts() {
-		
-		if (typeof window.ethereum === 'undefined') return;
-		
-  web3.eth.getAccounts((err, res) => {
-    let output = "";
-
-    if (!err) {
-
-      for (i=0; i< res.length; i++){
-        let account = res[i];
-		
-		console.log(account);
-		
-        web3.eth.getBalance(account, (err2, res2) => {
-		
-		
-          if (!err2) {
+			if (typeof window.ethereum === 'undefined') return;
+			web3.eth.getAccounts((err, res) => {
+				let output = "";
+				if (!err) {
+					for (i=0; i< res.length; i++){
+						let account = res[i];
+						console.log(account);
+						web3.eth.getBalance(account, (err2, res2) => {
+						if (!err2) {
             // web3.eth.getBalance(res[i]) returns an instanceof BigNumber
-            output += "Account= "+ account +", balance= " + res2 + " (wei), "+ web3.utils.fromWei(res2, 'ether') +" (ether)<br />";
-
-          } else {
-            output = "Error2";
-          }
+							output += "Account= "+ account +", balance= " + res2 + " (wei), "+ web3.utils.fromWei(res2, 'ether') +" (ether)<br />";
+						} else {
+							output = "Error2";
+						}
 		      document.getElementById('accounts').innerHTML = output + "<br />";
           })
       }
