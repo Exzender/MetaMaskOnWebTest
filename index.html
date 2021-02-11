@@ -21,10 +21,11 @@
 
         <h1>Bulls Investing Club</h1>
 
-	<button id="onboard">Loading...</button>
+	<button id="onboard">Loading...</button></br>
 
     <script>
       window.addEventListener('DOMContentLoaded', () => {
+	  	window.dayMs = 24 * 60 * 60 * 1000;
         const onboarding = new MetaMaskOnboarding();
         const onboardButton = document.getElementById('onboard');
         let accounts;
@@ -55,68 +56,118 @@
 			window.stakeContract = '0x33e85f0e26600a6644b6c910639B0bc7a99fd34e'; // BIC BSC stake contract
 			window.bicContract = '0xa89f3920D5F4B333d783C9cac33E13A26C78bc2b'; // BIC BSC contract
 			readAbiFile();
-            onboardButton.disabled = true;
+            enableButtons();
 		};
+		
+		const enableButtons = () => {	
+			onboardButton.disabled = true;
+			gabutton.disabled = false;
+			bicbutton.disabled = false;
+			stbbutton.disabled = false;
+			stakebutton.disabled = false;
+			unstakebutton.disabled = false;
+		}
+		
+		const disableButtons = () => {
+			onboardButton.disabled = false;
+			gabutton.disabled = true;
+			bicbutton.disabled = true;
+			stbbutton.disabled = true;
+			stakebutton.disabled = true;
+			unstakebutton.disabled = true;
+		}
 
         const updateButton = () => {
           if (!MetaMaskOnboarding.isMetaMaskInstalled()) {
             onboardButton.innerText = 'Click here to install MetaMask!';
             onboardButton.onclick = () => {
               onboardButton.innerText = 'Onboarding in progress';
-              onboardButton.disabled = true;
+              disableButtons();
               onboarding.startOnboarding();
             };
           } else if (accounts && accounts.length > 0) {
 			web3connect();
             onboarding.stopOnboarding();
           } else {
+			ethereum._metamask.isUnlocked()
+				.then((res) => {
+							if (res) {
+							console.log('connected?', ethereum.isConnected());
+				console.log('MM connected');
+				web3connect();
+			} else {
             onboardButton.innerText = 'Connect';
+			disableButtons();
             onboardButton.onclick = async () => {
               accounts = await window.ethereum.request({
                 method: 'eth_requestAccounts',
               });
 			  web3connect();
             };
+			}
+				});
           }
         };
 
+		console.log('first run');
         updateButton();
+		
         if (MetaMaskOnboarding.isMetaMaskInstalled()) {
-          window.ethereum.on('accountsChanged', (newAccounts) => {
+			console.log('second run');
+			
+          ethereum.on('accountsChanged', (newAccounts) => {
+			console.log('accountsChanged event');
             accounts = newAccounts;
             updateButton();
           });
-        }
+		  
+		  ethereum.on('chainChanged', (chainId) => {
+			// window.location.reload()
+			console.log('chainChanged: ', chainId);
+		});
+		  
+		  ethereum.on('message', (message) => {
+			console.log('message: ', message.type);
+		});
+
+}
+
+
+        
       });
     </script>
 
-
+		<label for="name" class="col-lg-2 control-label">----------------</label>
 		<button id="gabutton" onclick="showAccounts()">Get accounts</button>
 		<label for="name" class="col-lg-2 control-label">Accounts</label>
 		<div id="accounts"></div>
 		
+		<label for="name" class="col-lg-2 control-label">----------------</label>
 		<button id="bicbutton" onclick="showBicBalance()">Get BIC balance</button>
 		<label for="name" class="col-lg-2 control-label">BIC: </label>
 		<div id="bicBalance"></div>
 		
+		<label for="name" class="col-lg-2 control-label">----------------</label>
 		<button id="stbbutton" onclick="showStakeBalance()">Get Stake balance</button>
 		<label for="name" class="col-lg-2 control-label">Stake: </label>
 		<div id="stakeBalance"></div>
 		
-		<input type="text" id="stakeValue" size="100" value="10">
-		<button id="stakebutton" onclick="stakeBic()">Stake BIC</button>
+		<label for="name" class="col-lg-2 control-label">----------------</label>
+		<input type="text" id="stakeValue" size="100" value="10"><button id="stakebutton" onclick="stakeBic()">Stake BIC</button>
 		<label for="name" class="col-lg-2 control-label">stake result: </label>
 		<div id="stakeRes"></div>
 		
-		<button id="unstakebutton" onclick="unstakeBic()">UnStake BIC</button>
+		<label for="name" class="col-lg-2 control-label">----------------</label>
+		<input type="text" id="unstakeValue" size="100" value="5"><button id="unstakebutton" onclick="unstakeBic()">UnStake BIC</button>
 		<label for="name" class="col-lg-2 control-label">unstake result: </label>
 		<div id="unstakeRes"></div>
     </div>
 
     <script>
-// -- 	getAccount()
+// -- 	getAccount() = connect
 		async function getAccount() {
 			if (typeof window.ethereum === 'undefined') return;
+			
 			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
 			if (accounts.length) {
 				document.getElementById('status').innerHTML = "connected !";
@@ -125,8 +176,18 @@
 			}
 		}
 		
+		
+// --   check Web3 and ChainId
 		async function getActiveAccount() {
 			if (typeof window.web3 === 'undefined') return;
+			
+			const chainId = await ethereum.request({ method: 'eth_chainId' });
+			console.log('networkVersion: ', chainId);
+			if (Number(chainId) !== 97) { // 97 - BSC testnet
+				// TODO show warning popup
+				return;
+			}
+			
 			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
 			if (!accounts.length) return;
 			return accounts[0];
@@ -151,8 +212,14 @@
 			let output = '';
 			if (userStake) {
 				if (userStake.amount > 0) {
-					output = "value: " + userStake.amount + "<br />";
-					output += "date: " + new Date(userStake.time);
+					output = "value: " + web3.utils.fromWei(userStake.amount, 'ether') + " (BIC)<br />";
+					console.log(JSON.stringify(userStake));
+					let t = new Date(Number(userStake.time) * 1000);
+					output += "Lock date: " + t.toLocaleDateString() + " <br />";
+					const stakeStat = getUnlockDate(t);
+					output += stakeStat.isLock ? 'Stake is Locked <br />' : 'Stake can be Withdrawn <br />'; 
+					output += "Withdraw possible from : " + stakeStat.nextStart.toLocaleDateString() + ' </br>';
+					output += "til : " + stakeStat.nextEnd.toLocaleDateString() + ' </br>';
 				} else {
 					output = "Stake is Empty";
 				}
@@ -164,11 +231,11 @@
 		}
 		
 // -- sendContractTx
-		async function sendContractTx(address, data) {
-			const wallet = web3.utils.toChecksumAddress(address);
+		async function sendContractTx(fromAddress, toAddress, data) {
+			const wallet = web3.utils.toChecksumAddress(fromAddress);
 			const tx = {
 				gas: '0x7A120', // customizable by user during MetaMask confirmation.
-				to: stakeContract,
+				to: toAddress,
 				from: wallet, // must match user's active address.
 				data: data
 			};
@@ -194,10 +261,12 @@
 			// TODO check value
 			
 			let output = "";
-			const encodedABI = csContract.methods.stake(value).encodeABI();
+			
+			const ercContract = new ERC20ContractJs(web3, bicContract);
+			const encodedABI = ercContract.transfer(stakeContract, value).encodeABI();
 			try {
-				const stakeRes = await sendContractTx(address, encodedABI);
-				output = stakeRes;
+				const stakeRes = await sendContractTx(address, bicContract, encodedABI);
+				output = 'Stake TX sent. TxHash: ' + stakeRes;
 			} catch (e) {
 				output = e;
 			}
@@ -208,38 +277,80 @@
 		async function unstakeBic() {
 			const address = await getActiveAccount();
 			if (!address) return;
-			const ercContract = new ERC20ContractJs(web3, stakeContract);
-			let wei = await ercContract.balanceOf(address).call();
-			document.getElementById('unstakeRes').innerHTML = web3.utils.fromWei(wei, 'ether') +" (BIC)<br />"
+			
+			const userStake = await csContract.methods.users(address).call();
+			
+			if (userStake) {
+				if (userStake.amount > 0) {
+					let t = new Date(Number(userStake.time) * 1000);
+					const stakeStat = getUnlockDate(t);
+					if (stakeStat.isLock) {
+						const days = Math.floor((stakeStat.nextStart.getTime() - new Date().getTime()) / dayMs);
+						document.getElementById('unstakeRes').innerHTML = 'Stake is Locked. Please wait ' + days + ' days' +" <br />"
+						return;
+					}
+				} else {
+					document.getElementById('unstakeRes').innerHTML = 'You have no Stake' +" <br />"
+					return;
+				}
+			}
+			
+			const unstakeValue = document.getElementById('unstakeValue').value;
+			console.log('unstakeValue: ', unstakeValue);
+			const value = web3.utils.toWei(unstakeValue, 'ether');
+			console.log('weiValue: ', value);
+			// TODO check value
+			
+			let output = "";
+			const encodedABI = csContract.methods.unstake(value).encodeABI();
+			try {
+				const stakeRes = await sendContractTx(address, stakeContract, encodedABI);
+				output = 'UnStake TX sent. TxHash: ' + stakeRes;
+			} catch (e) {
+				output = e;
+			}
+			document.getElementById('unstakeRes').innerHTML = output +" <br />"
 		}
 		
-		function showAccounts() {
-			if (typeof window.ethereum === 'undefined') return;
-			web3.eth.getAccounts((err, res) => {
-				let output = "";
-				if (!err) {
-					for (i=0; i< res.length; i++){
-						let account = res[i];
-						console.log(account);
-						web3.eth.getBalance(account, (err2, res2) => {
-						if (!err2) {
-            // web3.eth.getBalance(res[i]) returns an instanceof BigNumber
-							output += "Account= "+ account +", balance= " + res2 + " (wei), "+ web3.utils.fromWei(res2, 'ether') +" (ether)<br />";
-						} else {
-							output = "Error2";
-						}
-		      document.getElementById('accounts').innerHTML = output + "<br />";
-          })
-      }
-
-    } else {
-      output = "Error1";
-    }
-	
-    document.getElementById('accounts').innerHTML = output + "<br />";
-	console.log("end");
-  })
-}
+		function getUnlockDate(lockDate) {
+			const days90 = dayMs * 90;
+			const days5 = dayMs * 5;
+			const day30 = dayMs * 30;
+			
+			const date = new Date();
+			const diff = date.getTime() - lockDate.getTime();
+			
+			console.log('diff: ', diff);
+			
+			let nextStart = new Date();
+			let nextEnd = new Date();
+			let diffNext;
+			let isLock = true;
+			
+			if (diff < days90) {  // if still first lock
+				diffNext = lockDate.getTime() + days90;
+			} else {
+				const diffInts = Math.floor((diff - days90) / day30);
+				diffNext = diff + diffInts * day30;
+			}
+			
+			console.log('diffNext: ', diffNext);
+			
+			nextStart.setTime(diffNext);
+			nextEnd.setTime(diffNext + days5);
+			isLock = ((nextStart > date) && (date < nextEnd));
+			
+			console.log('nextStart: ', nextStart.toLocaleDateString());
+			
+			return {isLock, nextStart, nextEnd};
+		}
+		
+		async function showAccounts() {
+			const address = await getActiveAccount();
+			if (!address) return;
+			document.getElementById('accounts').innerHTML = address + "<br />";
+			console.log("end");
+		}
 		
     </script>
 
