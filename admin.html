@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Admin test</title>
+
+	<link rel="stylesheet" type="text/css" href="main.css">
+
+	<script src="https://unpkg.com/web3@latest/dist/web3.min.js"></script>
+
+	<script src="./metamask-onboarding.bundle.js"></script>
+
+	<script src="https://unpkg.com/erc20-contract-js"></script>
+
+
+</head>
+<body>
+<div class="container">
+
+	<h1>Bulls Investing Club (ADMIN)</h1>
+
+	<button id="onboard">Loading...</button>
+
+	<script>
+		window.addEventListener('DOMContentLoaded', () => {
+			window.dayMs = 24 * 60 * 60 * 1000;
+			const onboarding = new MetaMaskOnboarding();
+			const onboardButton = document.getElementById('onboard');
+			let accounts;
+
+			function loadJSON(fileName, callback) {
+				const xobj = new XMLHttpRequest();
+				xobj.overrideMimeType("application/json");
+				xobj.open('GET', fileName, true);
+				xobj.onreadystatechange = function () {
+					if (xobj.readyState === 4 && xobj.status === 200) {
+						// Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+						callback(xobj.responseText);
+					}
+				};
+				xobj.send(null);
+			}
+
+			function readAbiFile() {
+				loadJSON('BIC_stake_ABI.txt', function(response) {
+					const contractAbi = JSON.parse(response);
+					window.csContract = new web3.eth.Contract(contractAbi, stakeContractAddress);
+					subscribeCsEvents();
+				});
+
+				loadJSON('BIC_token_ABI.txt', function(response) {
+					const contractAbi = JSON.parse(response);
+					window.bicContract = new web3.eth.Contract(contractAbi, bicContractAddress);
+					subscribeBicEvents();
+				});
+			}
+
+			const enableButtons = () => {
+				onboardButton.disabled = true;
+				setAccountButton.disabled = false;
+				mintButton.disabled = true;
+				burnButton.disabled = true;
+				monthResButton.disabled = true;
+				splitResultButton.disabled = true;
+			}
+
+			const disableButtons = () => {
+				onboardButton.disabled = false;
+				setAccountButton.disabled = true;
+				mintButton.disabled = true;
+				burnButton.disabled = true;
+				monthResButton.disabled = true;
+				splitResultButton.disabled = true;
+			}
+
+			const web3connect = () => {
+				onboardButton.innerText = 'Connected';
+				window.web3 = new Web3(window.ethereum);
+				window.stakeContractAddress = '0x33e85f0e26600a6644b6c910639B0bc7a99fd34e'; // BIC BSC stake contract
+				window.bicContractAddress = '0xa89f3920D5F4B333d783C9cac33E13A26C78bc2b'; // BIC BSC contract
+				readAbiFile();
+				enableButtons();
+			};
+
+			const subscribeBicEvents = () => {
+				bicContract.events.WithdrawRequest({}, (error, event) => {
+					if (error) {
+						document.getElementById('contractEvent').innerHTML = error + ' <br />';
+					} else {
+						let output = 'Withdraw Request: <br/>address = ' + event.returnValues.sender + '<br/>';
+						output += 'amount = ' + web3.utils.fromWei(event.returnValues.amount, 'ether') + ' USDT';
+						document.getElementById('contractEvent').innerHTML = output + ' <br />';
+					}
+				});
+			}
+
+
+			const subscribeCsEvents = () => {
+				csContract.events.Stake({}, (error, event) => {
+					if (error) {
+						document.getElementById('contractEvent').innerHTML = error + ' <br />';
+					} else {
+						let output = 'Stake Event: <br/>address = ' + event.returnValues.user + '<br/>';
+						output += 'amount = ' + web3.utils.fromWei(event.returnValues.amount, 'ether') + ' BIC';
+						document.getElementById('contractEvent').innerHTML = output + ' <br />';
+					}
+				});
+			}
+
+			const updateButton = () => {
+				if (!MetaMaskOnboarding.isMetaMaskInstalled()) {
+					onboardButton.innerText = 'Click here to install MetaMask!';
+					onboardButton.onclick = () => {
+						onboardButton.innerText = 'Onboarding in progress';
+						disableButtons();
+						onboarding.startOnboarding();
+					};
+				} else if (accounts && accounts.length > 0) {
+					web3connect();
+					onboarding.stopOnboarding();
+				} else {
+					ethereum._metamask.isUnlocked()
+							.then((res) => {
+								if (res) {
+									console.log('connected?', ethereum.isConnected());
+									console.log('MM connected');
+									web3connect();
+								} else {
+									onboardButton.innerText = 'Connect';
+									disableButtons();
+									onboardButton.onclick = async () => {
+										accounts = await window.ethereum.request({
+											method: 'eth_requestAccounts',
+										});
+										web3connect();
+									};
+								}
+							});
+				}
+			};
+
+			console.log('first run');
+			updateButton();
+
+			if (MetaMaskOnboarding.isMetaMaskInstalled()) {
+				console.log('second run');
+
+				ethereum.on('accountsChanged', (newAccounts) => {
+					console.log('accountsChanged event');
+					accounts = newAccounts;
+					updateButton();
+				});
+
+				ethereum.on('chainChanged', (chainId) => {
+					// window.location.reload()
+					console.log('chainChanged: ', chainId);
+				});
+
+				ethereum.on('message', (message) => {
+					console.log('message: ', message.type);
+				});
+
+			}
+
+		});
+	</script>
+
+	<label class="col-lg-2 control-label">----------------</label>
+	<input type="text" id="setAccount" size="45" value="0x3B244a2C08EdE0008CF745977d3752573F6aeC36"><button id="setAccountButton" onclick="setAccount()">Set account</button>
+	<label for="accounts" class="col-lg-2 control-label">Selected account: </label>
+	<div id="accounts"></div>
+	<div id="bicBalance"></div>
+	<div id="stakeBalance"></div>
+
+	<label class="col-lg-2 control-label">----------------</label>
+	<input type="text" id="mintValue" size="10" value="100"><button id="mintButton" onclick="mintBic()">Mint BIC</button>
+	<label class="col-lg-2 control-label">mint result: </label>
+	<div id="mintRes"></div>
+
+	<label class="col-lg-2 control-label">----------------</label>
+	<input type="text" id="burnValue" size="10" value="50"><button id="burnButton" onclick="burnBic()">Burn BIC</button>
+	<label class="col-lg-2 control-label">burn result: </label>
+	<div id="burnRes"></div>
+
+	<label class="col-lg-2 control-label">----------------</label>
+	<input type="text" id="setMonthValue" size="10" value="155.40">
+	<button id="monthResButton" onclick="setMonthResult()">Set Month Result</button>
+	<button id="splitResultButton" onclick="splitMonthResult()">Split month Result</button>
+	<label class="col-lg-2 control-label">month result: </label>
+	<div id="monthValue"></div>
+	<div id="monthRes"></div>
+	<div id="splitRes"></div>
+
+	<label class="col-lg-2 control-label">----------------</label>
+	<label class="col-lg-2 control-label">Contract Event: </label>
+	<div id="contractEvent"></div>
+
+</div>
+
+<script>
+	const enableButtons = () => {
+		mintButton.disabled = false;
+		burnButton.disabled = false;
+		monthResButton.disabled = false;
+	}
+
+	const disableButtons = () => {
+		mintButton.disabled = true;
+		burnButton.disabled = true;
+		monthResButton.disabled = true;
+		splitResultButton.disabled = true;
+	}
+
+	// -- 	setAccount()
+	async function setAccount() {
+		if (typeof window.ethereum === 'undefined') return;
+
+		const stringAddress = document.getElementById('setAccount').value;
+		if (!web3.utils.isAddress(stringAddress)) {
+			document.getElementById('accounts').innerHTML = "not valid address";
+			window.userAccount = '';
+			disableButtons();
+		} else {
+			const wallet = web3.utils.toChecksumAddress(stringAddress);
+			window.userAccount = wallet;
+			document.getElementById('accounts').innerHTML = wallet;
+			enableButtons();
+			// get user BIC balance
+			const bicBalance = await getBicBalance();
+			document.getElementById('bicBalance').innerHTML = 'Free tokens: ' + bicBalance + ' BIC<br />';
+			// get user Stake balance
+			const stakeBalance = await getStakeBalance();
+			document.getElementById('stakeBalance').innerHTML = 'Staked tokens: ' + stakeBalance;
+		}
+	}
+
+	// -- 	showBicBalance()
+	async function getBicBalance() {
+		console.log('getBicBalance');
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		const ercContract = new ERC20ContractJs(web3, bicContractAddress);
+		let wei = await ercContract.balanceOf(userAccount).call();
+		return document.getElementById('bicBalance').innerHTML = web3.utils.fromWei(wei, 'ether');
+	}
+
+
+	// --   check Web3 and ChainId
+	async function getActiveAccount() {
+		if (typeof window.web3 === 'undefined') return;
+
+		const chainId = await ethereum.request({ method: 'eth_chainId' });
+		console.log('networkVersion: ', chainId);
+		if (Number(chainId) !== 97) { // 97 - BSC testnet
+			// TODO show warning popup
+			return;
+		}
+
+		const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+		if (!accounts.length) return;
+		return accounts[0];
+	}
+
+	// -- 	showStakeBalance()
+	async function getStakeBalance() {
+		console.log('getStakeBalance');
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		const userStake = await csContract.methods.users(userAccount).call();
+
+		let output = '';
+		if (userStake) {
+			if (userStake.amount > 0) {
+				output = web3.utils.fromWei(userStake.amount, 'ether') + ' BIC<br/>';
+			} else {
+				output = "no stake";
+			}
+		} else {
+			output = "Get Stake error";
+		}
+
+		return output;
+	}
+
+	// -- sendContractTx
+	async function sendContractTx(fromAddress, toAddress, data) {
+		const wallet = web3.utils.toChecksumAddress(fromAddress);
+		const tx = {
+			gas: '0x7A120', // customizable by user during MetaMask confirmation.
+			to: toAddress,
+			from: wallet, // must match user's active address.
+			data: data
+		};
+
+		// As with any RPC call, it may throw an error
+		const txHash = await ethereum.request({
+			method: 'eth_sendTransaction',
+			params: [tx],
+		});
+
+		return 	txHash;
+	}
+
+	// -- 	mintBic()
+	async function mintBic() {
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		const mintValue = document.getElementById('mintValue').value;
+		const value = web3.utils.toWei(mintValue, 'ether');
+		// TODO check value
+
+		let output = "";
+
+		const encodedABI = bicContract.methods.mint(userAccount, value).encodeABI();
+		try {
+			const stakeRes = await sendContractTx(address, bicContractAddress, encodedABI);
+			output = 'Mint TX sent. TxHash: ' + stakeRes;
+		} catch (e) {
+			output = e;
+		}
+		document.getElementById('mintRes').innerHTML = output + "<br />"
+	}
+
+	// -- 	burnBic()
+	async function burnBic() {
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		const burnValue = document.getElementById('burnValue').value;
+		const value = web3.utils.toWei(burnValue, 'ether');
+		// TODO check value
+
+		let output = "";
+
+		const encodedABI = bicContract.methods.withdrawn(userAccount, value).encodeABI();
+		try {
+			const stakeRes = await sendContractTx(address, bicContractAddress, encodedABI);
+			output = 'Burn TX sent. TxHash: ' + stakeRes;
+		} catch (e) {
+			output = e;
+		}
+		document.getElementById('burnRes').innerHTML = output + "<br />"
+	}
+
+// -- setMonthResult()
+	async function setMonthResult() {
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		const monthValue = document.getElementById('setMonthValue').value.replace(',','.');
+		const value = web3.utils.toWei(monthValue, 'ether');
+		// TODO check value
+
+		document.getElementById('monthValue').innerHTML = 'Month value set to: ' + monthValue + "<br />"
+
+		let output = "";
+
+		const encodedABI = csContract.methods.monthResult(value).encodeABI();
+		try {
+			const stakeRes = await sendContractTx(address, stakeContractAddress, encodedABI);
+			output = 'MonthResult TX sent. TxHash: ' + stakeRes;
+			splitResultButton.disabled = false;
+		} catch (e) {
+			output = e;
+		}
+		document.getElementById('monthRes').innerHTML = output + "<br />"
+	}
+
+	// -- splitMonthResult()
+	async function splitMonthResult() {
+		const address = await getActiveAccount();
+		if (!address) return;
+
+		// TODO check if MonthResult set (!)
+
+		let output = "";
+
+		const encodedABI = csContract.methods.splitResult(100).encodeABI();  // using max users
+		try {
+			const stakeRes = await sendContractTx(address, stakeContractAddress, encodedABI);
+			output = 'Split Result TX sent. TxHash: ' + stakeRes;
+			// splitResultButton.disabled = true;
+			// TODO check event with number == total - disable button
+			// emit Processed(lastUser, usersList.length());
+		} catch (e) {
+			output = e;
+		}
+		document.getElementById('splitRes').innerHTML = output + "<br />"
+
+
+	}
+
+</script>
+
+</body>
+</html>

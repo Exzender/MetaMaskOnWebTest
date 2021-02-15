@@ -13,11 +13,10 @@ label {
 }
 input {
     padding:10px;
-    width: 50%;
     margin-bottom: 1em;
 }
 button {
-    padding: 1em 4em;
+    padding: 1em 1em;
 }
 
 #Investing {
